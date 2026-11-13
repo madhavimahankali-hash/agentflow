@@ -1,6 +1,7 @@
 """Pre-flight check for Amazon Bedrock: credentials, region, model access, tool use.
 
-    python -m scripts.check_bedrock
+    python -m scripts.check_bedrock          # check credentials and the models in .env
+    python -m scripts.check_bedrock --list   # list Anthropic models your account can use
 
 Calls each configured model once with a tiny prompt (a fraction of a cent) and
 explains the most common errors in plain words.
@@ -15,17 +16,37 @@ HINTS = {
                              "Open Bedrock console -> Model access and request access for this model.",
     "ValidationException": "The model ID is not valid in this region. Copy the exact model ID or inference "
                            "profile ID (often starts with 'us.' / 'eu.' / 'apac.') from the Bedrock console.",
-    "ResourceNotFoundException": "Model not found in this region. Check AWS_REGION and the model ID.",
+    "ResourceNotFoundException": "Model not found in this region, or retired (end of life). List the models "
+                                 "your account can use with: python -m scripts.check_bedrock --list",
     "UnrecognizedClientException": "AWS credentials are invalid. Run 'aws configure' or 'aws sso login'.",
     "ExpiredTokenException": "Your session expired. Run 'aws sso login' (or refresh your credentials).",
     "ThrottlingException": "Rate limited. Wait a minute and retry.",
 }
 
 
+def list_models(region: str) -> int:
+    """Print Anthropic inference profiles and on-demand models available to this account."""
+    import boto3
+
+    bedrock = boto3.client("bedrock", region_name=region)
+    print(f"Inference profiles in {region} (use these IDs in .env when present):")
+    for p in bedrock.list_inference_profiles().get("inferenceProfileSummaries", []):
+        if "anthropic" in p["inferenceProfileId"] and p.get("status", "ACTIVE") == "ACTIVE":
+            print(f"  {p['inferenceProfileId']}")
+    print("\nFoundation models with ACTIVE lifecycle:")
+    for m in bedrock.list_foundation_models(byProvider="Anthropic").get("modelSummaries", []):
+        if m.get("modelLifecycle", {}).get("status") == "ACTIVE":
+            print(f"  {m['modelId']}")
+    print("\nThen open Bedrock console -> Model access to make sure the chosen models are granted.")
+    return 0
+
+
 def main() -> int:
     from app.config import get_settings
 
     s = get_settings()
+    if "--list" in sys.argv:
+        return list_models(s.aws_region)
     print(f"LLM_PROVIDER = {s.llm_provider}")
     print(f"AWS_REGION   = {s.aws_region}")
     if s.llm_provider != "bedrock":
@@ -40,8 +61,8 @@ def main() -> int:
 
     try:
         ident = boto3.client("sts", region_name=s.aws_region).get_caller_identity()
-        arn = ident["Arn"]
-        print(f"AWS identity = ...{arn[-40:]}  (account id hidden)")
+        principal = ident["Arn"].split(":", 5)[-1]          # e.g. user/alice or assumed-role/Dev/alice
+        print(f"AWS identity = {principal}  (account id hidden)")
     except NoCredentialsError:
         print("\nFAIL: no AWS credentials found. Run 'aws configure' or 'aws sso login --profile <name>' "
               "and set AWS_PROFILE.")
