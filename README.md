@@ -83,13 +83,13 @@ All numbers come from this repo and are reproduced by CI on every push.
 
 | Check | Result |
 | --- | --- |
-| Tests (unit, end-to-end, API, restart, LLM code paths) | **23 passed** |
+| Tests (unit, end-to-end, API, restart, LLM code paths) | **24 passed** |
 | Code coverage | **91%** |
 | Eval: task success | **5/5** |
 | Eval: routing accuracy (exact tool sequence) | **5/5** |
 | Eval: approval precision / recall | **100% / 100%** |
 
-These scores are for **offline mode**, where planning uses workflow templates. Run the same suite against Bedrock with `LLM_PROVIDER=bedrock python -m eval.run_eval` to measure a real model.
+These scores are for **offline mode**, where planning uses workflow templates. The suite also includes a **prompt-injection case** (the request claims approval was already granted; the policy still requires it) and **free-text cases** that only run against Bedrock, where the model must extract every input from a plain sentence.
 
 ## Quick start
 
@@ -104,7 +104,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env                 # Windows: copy .env.example .env
 
 uvicorn app.api:app --reload         # open http://localhost:8000
-pytest                               # 23 tests
+pytest                               # 24 tests
 python -m eval.run_eval              # evaluation report
 ```
 
@@ -120,13 +120,21 @@ Or with Docker: `docker compose up --build`, then open http://localhost:8000.
 ## Using Amazon Bedrock
 
 1. In the AWS console, open **Bedrock → Model access** and enable a Claude model (or another model with tool use).
-2. Configure AWS credentials (`aws configure` or SSO) with `bedrock:InvokeModel` permission.
+2. Configure AWS credentials (`aws configure`, or `aws sso login` + `AWS_PROFILE` in `.env`) with `bedrock:InvokeModel` permission.
 3. In `.env`, set `LLM_PROVIDER=bedrock` and the `SUPERVISOR_MODEL_ID` / `WORKER_MODEL_ID` shown in your console.
+4. Check everything with one command, then run the evaluation against the real models:
+
+```bash
+python -m scripts.check_bedrock                       # credentials, model access, tool use
+python -m eval.run_eval --provider bedrock --save     # writes eval/results/bedrock-<timestamp>.md
+```
 
 With Bedrock on:
 - the **supervisor** writes the plan itself and extracts inputs from free text (try *"Share how the pipeline moved in 2026-W45 with sales"* with empty inputs)
 - **Research and Analysis** run a tool-calling loop over their own tools
 - the **summary** is written by the model
+- if the model's plan breaks a rule, the validation error is sent back and it gets **one chance to self-correct** before the safe template is used
+- every model call is logged with its **purpose, tokens and latency**, visible in the console and in the eval report
 
 ## Deploying to Bedrock AgentCore Runtime
 
@@ -176,7 +184,8 @@ app/
   tools/            tool registry · research · analysis · execution · mock systems
 agentcore_app.py    Bedrock AgentCore Runtime entrypoint
 eval/               evaluation cases + harness
-tests/              23 tests
+tests/              24 tests
+scripts/            Bedrock pre-flight check
 docs/               architecture, decision records, demo media
 .github/workflows/  CI: lint · tests · coverage · eval
 ```

@@ -24,6 +24,7 @@ from app.agents.supervisor import PlanningError, make_plan, write_summary
 from app.agents.workers import run_read_agent
 from app.config import Settings
 from app.history import HistoryStore
+from app.llm import record_llm_call
 from app.models import Plan, PlanStep
 from app.tools.base import ToolContext, get_tool
 from app.tools.mock_systems import MockSystems
@@ -70,7 +71,10 @@ def build_graph(settings: Settings, history: HistoryStore, systems: MockSystems)
         update: dict[str, Any] = {}
         if not state.get("plan"):
             try:
-                plan, extracted, planner = make_plan(state["request"], state.get("inputs", {}), settings)
+                plan, extracted, planner = make_plan(
+                    state["request"], state.get("inputs", {}), settings,
+                    on_llm=lambda purpose, msg, ms: record_llm_call(
+                        history, run_id, "supervisor", None, purpose, settings.supervisor_model_id, msg, ms))
             except PlanningError as e:
                 history.record_event(run_id, "planning_failed", agent="supervisor", error=str(e))
                 return stop("failed", str(e))
@@ -208,8 +212,11 @@ def build_graph(settings: Settings, history: HistoryStore, systems: MockSystems)
         status = state.get("status", "running")
         if status in ("running", "awaiting_approval"):
             status = "completed"
-        summary = write_summary(state["request"], status, state.get("results", []), state.get("facts", {}),
-                                settings, state.get("halt_reason"))
+        summary = write_summary(
+            state["request"], status, state.get("results", []), state.get("facts", {}), settings,
+            state.get("halt_reason"),
+            on_llm=lambda purpose, msg, ms: record_llm_call(
+                history, state["run_id"], "supervisor", None, purpose, settings.supervisor_model_id, msg, ms))
         history.update_run(state["run_id"], status, summary)
         history.record_event(state["run_id"], "run_finished", agent="supervisor", status=status, summary=summary)
         return {"status": status, "summary": summary}
