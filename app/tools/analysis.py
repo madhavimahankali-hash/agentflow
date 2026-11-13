@@ -21,7 +21,8 @@ def compare_vendor_rates(ctx: ToolContext, a: RatesArgs) -> dict:
     return {
         "rate_benchmark": {"vendors": rows, "average": round(avg, 4), "min": min(rates), "max": max(rates)},
         "rate_delta_pct": round(delta, 1),
-        "summary": f"Quote {a.quoted_rate} vs average {avg:.2f} {rows[0]['unit']} ({delta:+.1f}%) across {len(rows)} vendors",
+        "summary": (f"Quote {a.quoted_rate} vs average {avg:.2f} {rows[0]['unit']} "
+                    f"({delta:+.1f}%) across {len(rows)} vendors"),
     }
 
 
@@ -50,15 +51,20 @@ def score_risk(ctx: ToolContext, a: RiskArgs) -> dict:
     """Transparent rule-based score (0-100) from facts gathered earlier in the run."""
     f, score, reasons = ctx.facts, 0, []
     if f.get("sanctions_hits", 0) > 0:
-        score += 70; reasons.append("sanctions match")
+        score += 70
+        reasons.append("sanctions match")
     if f.get("registry_status") not in (None, "active"):
-        score += 30; reasons.append(f"registry status '{f.get('registry_status')}'")
+        score += 30
+        reasons.append(f"registry status '{f.get('registry_status')}'")
     if f.get("adverse_news", 0) > 0:
-        score += 15 * f["adverse_news"]; reasons.append(f"{f['adverse_news']} adverse news item(s)")
+        score += 15 * f["adverse_news"]
+        reasons.append(f"{f['adverse_news']} adverse news item(s)")
     if (f.get("rate_delta_pct") or 0) > 15:
-        score += 10; reasons.append("price >15% above benchmark")
+        score += 10
+        reasons.append("price >15% above benchmark")
     if f.get("budget_ok") is False:
-        score += 15; reasons.append("over budget")
+        score += 15
+        reasons.append("over budget")
     score = min(score, 100)
     level = "high" if score >= 50 else "medium" if score >= 20 else "low"
     return {"risk_score": score, "risk_level": level, "risk_reasons": reasons,
@@ -87,7 +93,8 @@ register(Tool("check_budget", "analysis",
               "Check expected annual spend against the remaining budget for a category.",
               "low", BudgetArgs, check_budget))
 register(Tool("score_risk", "analysis",
-              "Compute a vendor risk score from the research and analysis results gathered so far. Returns risk_score, risk_level.",
+              "Compute a vendor risk score from the research and analysis results gathered so far. "
+              "Returns risk_score, risk_level.",
               "low", RiskArgs, score_risk))
 register(Tool("sales_pipeline_summary", "analysis",
               "Summarise the sales pipeline for a given ISO week (e.g. 2026-W45). Returns pipeline_summary.",

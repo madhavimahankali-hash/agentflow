@@ -47,9 +47,12 @@ def main() -> int:
         tools = [e["data"]["tool"] for e in runner.history.events(run_id) if e["type"] == "tool_call"]
         ok_status = status == c["expected_status"]
         ok_route = tools == c["expected_tools"]
-        exp = set(c["expected_approvals"]); got = set(approvals_seen)
-        tp += len(exp & got); fp += len(got - exp); fn += len(exp - got)
-        success += ok_status; routed += ok_route
+        exp, got = set(c["expected_approvals"]), set(approvals_seen)
+        tp += len(exp & got)
+        fp += len(got - exp)
+        fn += len(exp - got)
+        success += ok_status
+        routed += ok_route
         rows.append((c["name"], status, ok_status, ok_route, approvals_seen, secs))
 
     print(f"{'case':42} {'status':18} {'ok':4} {'route':6} approvals")

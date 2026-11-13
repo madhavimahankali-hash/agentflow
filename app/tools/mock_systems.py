@@ -68,6 +68,9 @@ class MockSystems:
                 self._conn.executemany("INSERT INTO dw_pipeline VALUES (?,?,?,?,?,?)", SEED_PIPELINE)
             self._conn.commit()
 
+    def close(self) -> None:
+        self._conn.close()
+
     def query(self, sql: str, params: tuple = ()) -> list[dict]:
         with self._lock:
             return [dict(r) for r in self._conn.execute(sql, params).fetchall()]
@@ -122,7 +125,8 @@ class MockSystems:
 
     def slack_log(self, channel: str, text: str, via: str) -> str:
         sid = "SLK-" + uuid.uuid4().hex[:8]
-        self.write("INSERT INTO slack_log (id, channel, text, delivered_via) VALUES (?,?,?,?)", (sid, channel, text, via))
+        self.write("INSERT INTO slack_log (id, channel, text, delivered_via) VALUES (?,?,?,?)",
+                   (sid, channel, text, via))
         return sid
 
     def snapshot(self) -> dict:

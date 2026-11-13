@@ -21,4 +21,6 @@ def settings(tmp_path, monkeypatch):
 
 @pytest.fixture
 def runner(settings):
-    return Runner(settings)
+    r = Runner(settings)
+    yield r
+    r.close()

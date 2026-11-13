@@ -51,7 +51,8 @@ def vendor_onboarding() -> Plan:
                     "body": "Hello {{vendor_name}}, your supplier account {{vendor_id}} is now active."},
               description="Welcome the supplier"),
             S(id="s12", agent="execution", action="slack_notify",
-              args={"channel": "#procurement", "text": "Vendor {{vendor_name}} ({{vendor_id}}) onboarded. Legal: {{ticket_key}}"},
+              args={"channel": "#procurement",
+                    "text": "Vendor {{vendor_name}} ({{vendor_id}}) onboarded. Legal: {{ticket_key}}"},
               description="Tell the procurement team"),
         ],
     )

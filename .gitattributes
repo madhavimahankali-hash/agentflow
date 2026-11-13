@@ -1,0 +1,4 @@
+# Keep Unix line endings in the repo (avoids CRLF warnings on Windows)
+* text=auto eol=lf
+*.png binary
+*.gif binary

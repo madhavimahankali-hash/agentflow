@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS idempotency (
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 class HistoryStore:
@@ -70,6 +70,9 @@ class HistoryStore:
         with self._lock:
             self._conn.executescript(SCHEMA)
             self._conn.commit()
+
+    def close(self) -> None:
+        self._conn.close()
 
     # ---- helpers -------------------------------------------------------
     def _exec(self, sql: str, params: tuple = ()) -> None:
@@ -175,7 +178,7 @@ class HistoryStore:
         return self._all(sql + " ORDER BY created_at DESC", tuple(params))
 
     def stale_approvals(self, ttl_hours: float) -> list[dict]:
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat(timespec="milliseconds")
+        cutoff = (datetime.now(UTC) - timedelta(hours=ttl_hours)).isoformat(timespec="milliseconds")
         return self._all(
             "SELECT * FROM approvals WHERE status='pending' AND created_at < ?", (cutoff,)
         )

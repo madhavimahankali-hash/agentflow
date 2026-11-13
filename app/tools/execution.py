@@ -94,7 +94,8 @@ def slack_notify(ctx: ToolContext, a: SlackArgs) -> dict:
     return {"slack_message_id": sid, "summary": f"Posted to {a.channel} via {via}"}
 
 
-register(Tool("erp_create_vendor", "execution", "Create a vendor record in the ERP (status inactive). Returns vendor_id.",
+register(Tool("erp_create_vendor", "execution",
+              "Create a vendor record in the ERP (status inactive). Returns vendor_id.",
               "low", CreateVendorArgs, erp_create_vendor, writes=True))
 register(Tool("erp_set_bank_details", "execution", "Save or change a vendor's bank account for payments.",
               "high", BankArgs, erp_set_bank_details, writes=True))
@@ -102,7 +103,8 @@ register(Tool("erp_activate_vendor", "execution", "Activate a vendor so it can b
               "medium", VendorIdArgs, erp_activate_vendor, writes=True))
 register(Tool("issue_payment", "execution", "Issue a payment to a vendor.",
               "medium", PaymentArgs, issue_payment, writes=True))
-register(Tool("jira_create_ticket", "execution", "Open a Jira ticket (e.g. LEGAL contract review, IT access). Returns ticket_key.",
+register(Tool("jira_create_ticket", "execution",
+              "Open a Jira ticket (e.g. LEGAL contract review, IT access). Returns ticket_key.",
               "low", TicketArgs, jira_create_ticket, writes=True))
 register(Tool("send_email", "execution", "Send an email.",
               "medium", EmailArgs, send_email, writes=True))

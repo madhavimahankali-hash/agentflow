@@ -8,7 +8,7 @@ always guaranteed to run, so later steps can rely on its outputs.
 from __future__ import annotations
 
 import json
-from typing import Callable
+from collections.abc import Callable
 
 from app.agents.common import call_tool, facts_from, resolve
 from app.config import Settings

@@ -97,7 +97,8 @@ def make_plan(request: str, inputs: dict, settings: Settings) -> tuple[Plan, dic
     if plan is None:
         raise PlanningError(
             "No workflow template matches this request"
-            + (f" and the LLM planner failed ({llm_error})" if llm_error else " (enable LLM_PROVIDER=bedrock for free-form planning)")
+            + (f" and the LLM planner failed ({llm_error})" if llm_error
+               else " (enable LLM_PROVIDER=bedrock for free-form planning)")
         )
     validate_plan(plan, settings)
     return plan, {}, "template" + (f" (LLM fallback: {llm_error})" if llm_error else "")

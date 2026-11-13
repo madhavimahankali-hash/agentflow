@@ -14,8 +14,6 @@ class ScriptedModel:
         self.calls = 0
 
     def with_structured_output(self, schema):
-        model = self
-
         class _S:
             def invoke(self, messages):
                 # LLM planner extracts the week from free text

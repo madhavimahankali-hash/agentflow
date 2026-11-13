@@ -140,7 +140,8 @@ def build_graph(settings: Settings, history: HistoryStore, systems: MockSystems)
         tier = None
         if decision and decision.get("step_id") == step.id:
             if decision["decision"] != "approve":
-                reason = f"{tool.name} {decision['decision']} by {decision.get('approver')}: {decision.get('comment') or 'no comment'}"
+                reason = (f"{tool.name} {decision['decision']} by {decision.get('approver')}: "
+                          f"{decision.get('comment') or 'no comment'}")
                 history.record_event(run_id, "run_halted", agent="execution", step_id=step.id, reason=reason)
                 return {**stop("halted", reason), "decision": None}
             args = decision.get("edited_args") or args

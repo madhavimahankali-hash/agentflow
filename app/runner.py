@@ -8,11 +8,11 @@ import uuid
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
+import app.tools  # noqa: F401  (registers tools)
 from app.config import Settings, get_settings
 from app.graph import build_graph
 from app.history import HistoryStore
 from app.tools.mock_systems import MockSystems
-import app.tools  # noqa: F401  (registers tools)
 
 
 class ApprovalConflict(Exception):
@@ -24,10 +24,16 @@ class Runner:
         self.settings = settings or get_settings()
         self.history = HistoryStore(self.settings.history_db)
         self.systems = MockSystems(self.settings.systems_db)
-        conn = sqlite3.connect(str(self.settings.checkpoint_db), check_same_thread=False)
-        self.checkpointer = SqliteSaver(conn)
+        self._checkpoint_conn = sqlite3.connect(str(self.settings.checkpoint_db), check_same_thread=False)
+        self.checkpointer = SqliteSaver(self._checkpoint_conn)
         self.graph = build_graph(self.settings, self.history, self.systems).compile(checkpointer=self.checkpointer)
         self._locks: dict[str, threading.Lock] = {}
+
+    def close(self) -> None:
+        """Release database connections (tests, graceful shutdown)."""
+        self.history.close()
+        self.systems.close()
+        self._checkpoint_conn.close()
 
     @staticmethod
     def _config(run_id: str) -> dict:

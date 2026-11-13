@@ -87,7 +87,7 @@ def decide(approval_id: str, body: ApprovalDecision, background: BackgroundTasks
     try:
         run_id = r.decide(approval_id, body.decision, body.approver, body.comment, body.edited_args)
     except ApprovalConflict as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, str(e)) from e
     background.add_task(r.resume, run_id, body.decision, body.approver, body.comment, body.edited_args)
     return {"approval_id": approval_id, "run_id": run_id, "decision": body.decision, "status": "resuming"}
 
