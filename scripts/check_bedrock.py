@@ -14,8 +14,8 @@ import time
 HINTS = {
     "AccessDeniedException": "Your IAM user/role may lack bedrock:InvokeModel, OR the model is not enabled. "
                              "Open Bedrock console -> Model access and request access for this model.",
-    "ValidationException": "The model ID is not valid in this region. Copy the exact model ID or inference "
-                           "profile ID (often starts with 'us.' / 'eu.' / 'apac.') from the Bedrock console.",
+    "ValidationException": "Bedrock rejected the request: read the message above. If it is about the model ID, "
+                           "copy an ID from 'python -m scripts.check_bedrock --list'.",
     "ResourceNotFoundException": "Model not found in this region, or retired (end of life). List the models "
                                  "your account can use with: python -m scripts.check_bedrock --list",
     "UnrecognizedClientException": "AWS credentials are invalid. Run 'aws configure' or 'aws sso login'.",
@@ -83,7 +83,8 @@ def main() -> int:
                 modelId=model,
                 messages=[{"role": "user", "content": [{"text": "Call the ping tool with ok=true."}]}],
                 toolConfig={"tools": [tool]},
-                inferenceConfig={"maxTokens": 50, "temperature": 0},
+                inferenceConfig={"maxTokens": 50, **({"temperature": s.llm_temperature}
+                                                     if s.llm_temperature is not None else {})},
             )
             ms = int((time.perf_counter() - t0) * 1000)
             used_tool = any("toolUse" in b for b in r["output"]["message"]["content"])

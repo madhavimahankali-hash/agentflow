@@ -31,6 +31,7 @@ class Settings:
     approval_ttl_hours: float
     internal_email_domain: str
     max_steps: int
+    llm_temperature: float | None
     opensanctions_api_key: str | None
     slack_webhook_url: str | None
 
@@ -54,14 +55,16 @@ def get_settings() -> Settings:
     return Settings(
         llm_provider=os.getenv("LLM_PROVIDER", "fake").lower(),
         aws_region=os.getenv("AWS_REGION", "us-east-1"),
-        supervisor_model_id=os.getenv("SUPERVISOR_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0"),
-        worker_model_id=os.getenv("WORKER_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0"),
+        supervisor_model_id=os.getenv("SUPERVISOR_MODEL_ID", "us.anthropic.claude-sonnet-5-5"),
+        worker_model_id=os.getenv("WORKER_MODEL_ID", "us.anthropic.claude-haiku-5-5"),
         data_dir=data_dir,
         approval_mode=os.getenv("APPROVAL_MODE", "policy").lower(),
         payment_approval_threshold=float(os.getenv("PAYMENT_APPROVAL_THRESHOLD", "1000")),
         approval_ttl_hours=float(os.getenv("APPROVAL_TTL_HOURS", "24")),
         internal_email_domain=os.getenv("INTERNAL_EMAIL_DOMAIN", "example.com"),
         max_steps=int(os.getenv("MAX_STEPS", "25")),
+        # Newer Claude models reject `temperature`; only send it when explicitly set.
+        llm_temperature=float(os.environ["LLM_TEMPERATURE"]) if os.getenv("LLM_TEMPERATURE") else None,
         opensanctions_api_key=os.getenv("OPENSANCTIONS_API_KEY") or None,
         slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL") or None,
     )

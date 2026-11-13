@@ -12,10 +12,11 @@ from app.config import Settings
 
 
 @lru_cache(maxsize=8)
-def _bedrock(model_id: str, region: str):
+def _bedrock(model_id: str, region: str, temperature: float | None = None):
     from langchain_aws import ChatBedrockConverse  # imported lazily: not needed offline
 
-    return ChatBedrockConverse(model=model_id, region_name=region, temperature=0, max_tokens=2048)
+    kwargs = {"temperature": temperature} if temperature is not None else {}
+    return ChatBedrockConverse(model=model_id, region_name=region, max_tokens=2048, **kwargs)
 
 
 def chat_model(role: str, settings: Settings):
@@ -23,7 +24,7 @@ def chat_model(role: str, settings: Settings):
     if settings.llm_provider != "bedrock":
         return None
     model_id = settings.supervisor_model_id if role == "supervisor" else settings.worker_model_id
-    return _bedrock(model_id, settings.aws_region)
+    return _bedrock(model_id, settings.aws_region, settings.llm_temperature)
 
 
 def text_of(message: Any) -> str:
