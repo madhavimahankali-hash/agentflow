@@ -9,6 +9,8 @@ Planning strategy
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -73,25 +75,45 @@ def validate_plan(plan: Plan, settings: Settings) -> None:
             raise PlanningError(f"Step {s.id}: read steps must come before execution steps")
 
 
-def make_plan(request: str, inputs: dict, settings: Settings) -> tuple[Plan, dict, str]:
-    """Returns (plan, extracted_inputs, planner_name)."""
+LLMCallback = Callable[[str, Any, int], None]   # (purpose, ai_message, latency_ms)
+PLAN_ATTEMPTS = 2
+
+
+def make_plan(request: str, inputs: dict, settings: Settings,
+              on_llm: LLMCallback | None = None) -> tuple[Plan, dict, str]:
+    """Returns (plan, extracted_inputs, planner_name).
+
+    The LLM gets one chance to correct an invalid plan (the validation error is fed
+    back to it). If it still fails, a known workflow template is used instead.
+    """
     llm = chat_model("supervisor", settings)
     llm_error = None
     if llm is not None:
-        try:
-            planner = llm.with_structured_output(LLMPlan)
-            out: LLMPlan = planner.invoke([
-                ("system", PLANNER_PROMPT % {
-                    "max_steps": settings.max_steps,
-                    "vendor_fields": ", ".join(VENDOR_FIELDS),
-                    "catalog": json.dumps(catalog(), indent=1),
-                }),
-                ("human", f"Request: {request}\nStructured inputs: {json.dumps(inputs)}"),
-            ])
-            validate_plan(out.plan, settings)
-            return out.plan, out.extracted_inputs, "bedrock"
-        except Exception as e:  # invalid or failed plan -> safe fallback
-            llm_error = f"{type(e).__name__}: {e}"
+        planner = llm.with_structured_output(LLMPlan, include_raw=True)
+        messages: list = [
+            ("system", PLANNER_PROMPT % {
+                "max_steps": settings.max_steps,
+                "vendor_fields": ", ".join(VENDOR_FIELDS),
+                "catalog": json.dumps(catalog(), indent=1),
+            }),
+            ("human", f"Request: {request}\nStructured inputs: {json.dumps(inputs)}"),
+        ]
+        for attempt in range(1, PLAN_ATTEMPTS + 1):
+            try:
+                t0 = time.perf_counter()
+                out = planner.invoke(messages)
+                if on_llm:
+                    on_llm(f"plan_attempt_{attempt}", out.get("raw"), int((time.perf_counter() - t0) * 1000))
+                if out.get("parsing_error") or out.get("parsed") is None:
+                    raise PlanningError(f"plan could not be parsed: {out.get('parsing_error')}")
+                parsed: LLMPlan = out["parsed"]
+                validate_plan(parsed.plan, settings)
+                name = "bedrock" if attempt == 1 else f"bedrock (self-corrected on attempt {attempt})"
+                return parsed.plan, parsed.extracted_inputs, name
+            except Exception as e:
+                llm_error = f"{type(e).__name__}: {e}"
+                messages.append(("human", f"Your plan was rejected: {llm_error}. "
+                                          "Return a corrected plan that follows every rule."))
 
     plan = match_template(request)
     if plan is None:
@@ -105,17 +127,20 @@ def make_plan(request: str, inputs: dict, settings: Settings) -> tuple[Plan, dic
 
 
 def write_summary(request: str, status: str, results: list[dict], facts: dict, settings: Settings,
-                  halt_reason: str | None = None) -> str:
+                  halt_reason: str | None = None, on_llm: LLMCallback | None = None) -> str:
     lines = [f"- [{r['agent']}] {r['note']}" for r in results]
     llm = chat_model("supervisor", settings)
     if llm is not None:
         try:
+            t0 = time.perf_counter()
             msg = llm.invoke([
                 ("system", "Write a concise run summary for a business user (max 120 words). "
                            "State the outcome first, then key findings and any action they must take."),
                 ("human", f"Request: {request}\nStatus: {status}\nStop reason: {halt_reason or '-'}\n"
                           f"Step results:\n" + "\n".join(lines)),
             ])
+            if on_llm:
+                on_llm("summary", msg, int((time.perf_counter() - t0) * 1000))
             return text_of(msg)
         except Exception:
             pass

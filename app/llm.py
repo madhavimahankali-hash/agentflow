@@ -38,3 +38,17 @@ def text_of(message: Any) -> str:
         elif isinstance(block, str):
             parts.append(block)
     return "".join(parts).strip()
+
+
+def usage_of(message: Any) -> dict:
+    """Token usage reported by the model (LangChain usage_metadata), or zeros."""
+    u = getattr(message, "usage_metadata", None) or {}
+    return {"input_tokens": int(u.get("input_tokens", 0) or 0),
+            "output_tokens": int(u.get("output_tokens", 0) or 0)}
+
+
+def record_llm_call(history, run_id: str, agent: str, step_id: str | None, purpose: str,
+                    model_id: str, message: Any, latency_ms: int) -> None:
+    """One history event per model call: who called it, why, tokens and latency (cost visibility)."""
+    history.record_event(run_id, "llm_call", agent=agent, step_id=step_id, purpose=purpose,
+                         model=model_id, latency_ms=latency_ms, **usage_of(message))

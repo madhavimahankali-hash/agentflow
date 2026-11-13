@@ -8,12 +8,13 @@ always guaranteed to run, so later steps can rely on its outputs.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 
 from app.agents.common import call_tool, facts_from, resolve
 from app.config import Settings
 from app.history import HistoryStore
-from app.llm import chat_model, text_of
+from app.llm import chat_model, record_llm_call, text_of
 from app.models import PlanStep
 from app.tools.base import ToolContext, get_tool, tools_for
 
@@ -49,11 +50,14 @@ def run_read_agent(agent: str, step: PlanStep, ctx: ToolContext, settings: Setti
         result = invoke(step.action, planned_args)
         return facts_from(result), result["summary"]
 
-    return _llm_loop(agent, step, planned_args, ctx, llm, invoke)
+    def on_llm(purpose: str, msg, ms: int) -> None:
+        record_llm_call(history, ctx.run_id, agent, step.id, purpose, settings.worker_model_id, msg, ms)
+
+    return _llm_loop(agent, step, planned_args, ctx, llm, invoke, on_llm)
 
 
 def _llm_loop(agent: str, step: PlanStep, planned_args: dict, ctx: ToolContext, llm,
-              invoke: Callable[[str, dict], dict]) -> tuple[dict, str]:
+              invoke: Callable[[str, dict], dict], on_llm=None) -> tuple[dict, str]:
     from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
     from langchain_core.tools import StructuredTool
 
@@ -79,8 +83,11 @@ def _llm_loop(agent: str, step: PlanStep, planned_args: dict, ctx: ToolContext, 
         ),
     ]
     note = ""
-    for _ in range(MAX_TOOL_ROUNDS):
+    for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+        t0 = time.perf_counter()
         ai = bound.invoke(messages)
+        if on_llm:
+            on_llm(f"reasoning_round_{round_no}", ai, int((time.perf_counter() - t0) * 1000))
         messages.append(ai)
         if not ai.tool_calls:
             note = text_of(ai)
