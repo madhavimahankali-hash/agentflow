@@ -1,0 +1,40 @@
+"""Model access. Amazon Bedrock in production; None in offline "fake" mode.
+
+Every caller has a deterministic fallback when the model is None, so the whole
+system runs and is testable without AWS credentials.
+"""
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Any
+
+from app.config import Settings
+
+
+@lru_cache(maxsize=8)
+def _bedrock(model_id: str, region: str):
+    from langchain_aws import ChatBedrockConverse  # imported lazily: not needed offline
+
+    return ChatBedrockConverse(model=model_id, region_name=region, temperature=0, max_tokens=2048)
+
+
+def chat_model(role: str, settings: Settings):
+    """role: 'supervisor' (planning, final summary) or 'worker' (research/analysis reasoning)."""
+    if settings.llm_provider != "bedrock":
+        return None
+    model_id = settings.supervisor_model_id if role == "supervisor" else settings.worker_model_id
+    return _bedrock(model_id, settings.aws_region)
+
+
+def text_of(message: Any) -> str:
+    """Bedrock Converse can return content as a list of blocks; flatten to text."""
+    content = getattr(message, "content", message)
+    if isinstance(content, str):
+        return content
+    parts = []
+    for block in content or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append(block.get("text", ""))
+        elif isinstance(block, str):
+            parts.append(block)
+    return "".join(parts).strip()

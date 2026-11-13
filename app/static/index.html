@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentFlow Console</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#667085; --line:#e4e7ec;
+          --accent:#2f6fde; --ok:#12805c; --warn:#b54708; --bad:#c01048; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; }
+  header h1 { font-size:18px; margin:0; } header span { color:var(--muted); }
+  main { display:grid; grid-template-columns: 380px 1fr; gap:16px; padding:16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:16px; }
+  h2 { font-size:14px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  label { display:block; font-weight:600; margin:8px 0 4px; }
+  textarea, select, input { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+  textarea.code { font:12px/1.4 ui-monospace,Menlo,monospace; min-height:150px; }
+  button { padding:7px 12px; border-radius:6px; border:1px solid var(--line); background:#fff; cursor:pointer; font:inherit; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.ok { background:var(--ok); border-color:var(--ok); color:#fff; } button.bad { color:var(--bad); }
+  .row { display:flex; gap:8px; align-items:center; margin-top:10px; }
+  .run { padding:8px; border-radius:6px; cursor:pointer; border:1px solid transparent; }
+  .run:hover, .run.sel { background:#eef4ff; border-color:#c9dafc; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; font-weight:600; background:#eef0f3; }
+  .s-completed { background:#dcfae6; color:var(--ok);} .s-awaiting_approval { background:#fef0c7; color:var(--warn);}
+  .s-halted, .s-failed { background:#fee4e2; color:var(--bad);} .s-running { background:#e0eaff; color:var(--accent);}
+  .muted { color:var(--muted); } .small { font-size:12px; }
+  .ev { display:grid; grid-template-columns: 92px 110px 1fr; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); }
+  .ag { font-weight:600; } .ag-supervisor{color:var(--accent);} .ag-execution{color:#7a2e0e;} .ag-human{color:var(--warn);}
+  pre { white-space:pre-wrap; word-break:break-word; margin:4px 0 0; font:12px/1.4 ui-monospace,Menlo,monospace; background:#f8f9fb; padding:8px; border-radius:6px; }
+  .approval { border-left:4px solid var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:12px; } td, th { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
+  .steps li { margin:3px 0; } .done { color:var(--ok); }
+</style>
+</head>
+<body>
+<header><h1>AgentFlow</h1><span>Supervisor + specialist agents with human approval</span><span id="provider" class="small"></span></header>
+<main>
+  <section>
+    <div class="card">
+      <h2>New run</h2>
+      <label for="preset">Example</label>
+      <select id="preset"></select>
+      <label for="req">Request</label>
+      <textarea id="req" rows="2"></textarea>
+      <label for="inputs">Inputs (JSON)</label>
+      <textarea id="inputs" class="code"></textarea>
+      <div class="row"><button class="primary" id="start">Start run</button><span id="startMsg" class="muted small"></span></div>
+    </div>
+    <div class="card"><h2>Approval inbox</h2><div id="approvals" class="muted">No pending approvals.</div></div>
+    <div class="card"><h2>Runs</h2><div id="runs" class="muted">No runs yet.</div></div>
+  </section>
+  <section>
+    <div class="card" id="detail"><h2>Run detail</h2><p class="muted">Select a run.</p></div>
+    <div class="card"><h2>Business systems (mock)</h2><div id="systems"></div></div>
+  </section>
+</main>
+<script>
+const PRESETS = {
+  "Vendor onboarding: FastFreight (low risk)": {
+    request: "Onboard FastFreight LLC as a logistics vendor. Their quote is attached.",
+    inputs: {vendor_name:"FastFreight LLC", country:"US", category:"logistics", contact_email:"ap@fastfreight.com",
+             quoted_rate:2.05, annual_spend:90000, iban:"US12 3456 7890 1234 5678 90", account_name:"FastFreight LLC"}},
+  "Vendor onboarding: Shadow Cargo (high risk)": {
+    request: "Onboard Shadow Cargo Ltd as a logistics supplier.",
+    inputs: {vendor_name:"Shadow Cargo Ltd", country:"XX", category:"logistics", contact_email:"ops@shadowcargo.xx",
+             quoted_rate:2.9, annual_spend:150000, iban:"XX00 1111 2222 3333 4444", account_name:"Shadow Cargo Ltd"}},
+  "Weekly pipeline report": {request: "Send the weekly sales pipeline report to the team.", inputs: {week:"2026-W45"}},
+};
+let selected = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pill = s => `<span class="pill s-${esc(s)}">${esc(s)}</span>`;
+const api = async (path, opts={}) => {
+  const r = await fetch(path, {headers:{"Content-Type":"application/json"}, ...opts});
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return r.json();
+};
+function loadPreset() { const p = PRESETS[$("preset").value]; $("req").value = p.request; $("inputs").value = JSON.stringify(p.inputs, null, 2); }
+Object.keys(PRESETS).forEach(k => $("preset").insertAdjacentHTML("beforeend", `<option>${esc(k)}</option>`));
+$("preset").onchange = loadPreset; loadPreset();
+
+$("start").onclick = async () => {
+  try {
+    const res = await api("/runs", {method:"POST", body: JSON.stringify({request:$("req").value, inputs: JSON.parse($("inputs").value || "{}")})});
+    selected = res.run_id; $("startMsg").textContent = "Started " + res.run_id; refresh();
+  } catch (e) { $("startMsg").textContent = "Error: " + e.message; }
+};
+
+async function decide(id, decision) {
+  const comment = document.querySelector(`[data-comment="${id}"]`).value;
+  try { await api(`/approvals/${id}`, {method:"POST", body: JSON.stringify({decision, comment, approver:"finance.approver@example.com"})}); }
+  catch (e) { alert(e.message); }
+  refresh();
+}
+window.decide = decide;
+
+async function refresh() {
+  const [runs, approvals, systems] = await Promise.all([api("/runs"), api("/approvals"), api("/systems")]);
+  $("approvals").innerHTML = approvals.length ? approvals.map(a => `
+    <div class="card approval">
+      <div><b>${esc(a.tool)}</b> ${pill(a.tier)} <span class="muted small">${esc(a.run_id)}</span></div>
+      <div class="small muted">${esc(a.reason)}</div>
+      <pre>${esc(JSON.stringify(a.args, null, 2))}</pre>
+      <details><summary class="small">Evidence</summary><pre>${esc(JSON.stringify(a.evidence, null, 2))}</pre></details>
+      <input placeholder="Comment (e.g. verified by phone)" data-comment="${esc(a.id)}">
+      <div class="row"><button class="ok" onclick="decide('${esc(a.id)}','approve')">Approve</button>
+      <button class="bad" onclick="decide('${esc(a.id)}','reject')">Reject</button></div>
+    </div>`).join("") : "No pending approvals.";
+  $("runs").innerHTML = runs.length ? runs.map(r => `
+    <div class="run ${r.id === selected ? "sel" : ""}" onclick="selected='${esc(r.id)}';refresh()">
+      ${pill(r.status)} <b class="small">${esc(r.id)}</b><div class="small muted">${esc(r.request)}</div></div>`).join("") : "No runs yet.";
+  $("systems").innerHTML = Object.entries(systems).map(([name, rows]) => rows.length ? `
+    <h3 class="small">${esc(name)}</h3><table><tr>${Object.keys(rows[0]).map(k => `<th>${esc(k)}</th>`).join("")}</tr>
+    ${rows.slice(0, 8).map(row => `<tr>${Object.values(row).map(v => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table>` : "").join("")
+    || '<p class="muted">Nothing written yet.</p>';
+  if (selected) renderDetail(selected);
+}
+
+async function renderDetail(id) {
+  const [run, hist] = await Promise.all([api(`/runs/${id}`), api(`/runs/${id}/history`)]);
+  const st = run.state || {}, steps = st.plan?.steps || [], done = new Set((st.results || []).map(r => r.step_id));
+  $("detail").innerHTML = `
+    <h2>Run detail</h2>
+    <div>${pill(run.status)} <b>${esc(run.id)}</b> <span class="muted small">planner: ${esc(st.planner || "-")}</span></div>
+    <p>${esc(run.request)}</p>
+    ${run.summary ? `<pre>${esc(run.summary)}</pre>` : ""}
+    ${st.halt_reason ? `<p style="color:var(--bad)"><b>Stopped:</b> ${esc(st.halt_reason)}</p>` : ""}
+    <h3 class="small">Plan</h3>
+    <ol class="steps">${steps.map(s => `<li class="${done.has(s.id) ? "done" : ""}">${done.has(s.id) ? "✓ " : ""}<b>${esc(s.agent)}</b>: ${esc(s.description)} <span class="muted small">(${esc(s.action)})</span></li>`).join("")}</ol>
+    <h3 class="small">Execution history</h3>
+    ${hist.events.map(e => `<div class="ev small"><span class="muted">${esc(e.ts.slice(11, 23))}</span>
+      <span class="ag ag-${esc(e.agent)}">${esc(e.agent || "")}</span>
+      <span><b>${esc(e.type)}</b> ${esc(e.step_id || "")} ${esc(e.data?.note || e.data?.reason || e.data?.tool || e.data?.action || "")}
+      ${e.data?.latency_ms !== undefined ? `<span class="muted">${e.data.latency_ms} ms</span>` : ""}</span></div>`).join("")}`;
+}
+
+api("/health").then(h => $("provider").textContent = "· model provider: " + h.llm_provider);
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>
